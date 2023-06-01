@@ -1,0 +1,949 @@
+#All Excel Functions From SimTools translated into R
+
+library(tidyverse)
+# UTIL Function
+UTIL <- function(x,r,s){
+  #######################
+  # x: any amount of monetary income
+  # r: risk tolerance constant
+  # s: risk tolerance slope
+  # output: expected utility or money amount given a risk tolerance
+  #######################
+  
+  if(missing(s) & r>0){
+    EUtility <- -exp(-x/r)
+    return(EUtility)
+  }
+  else if (missing(s) & r<0){
+    EUtility <- exp(-x/r)
+    return(EUtility)
+  }
+  else {
+    
+    utl <- log(r+s*x)
+    EUtility <- exp(utl*(1-1/s))/(s-1)
+    return(EUtility)
+  }
+  
+}
+
+
+
+# Risk Tolerance Function
+RISKTOL <- function(H,L,CE){
+  #######################
+  # H: High monetary possibility
+  # L: Low monetary possibility 
+  # CE: Certainty Equivalent 
+  # output: Equivalent Risk Tolerance
+  #######################
+  
+  if(H<=L){
+    stop("Error H cannot be less than L")
+  } else{
+    rat=(CE-L)/(H-L)
+    k=1
+    if(rat==0.5){
+      stop("Error")
+    } else{
+      if (rat>0.5){
+        rat=1-rat
+        k=-1
+      } 
+      if (rat<0){
+        stop("Error")
+      } else{
+        x=0.1251/(0.5-rat)
+        z=rat/0.6932
+        
+        for (i in 1:15){
+          y=(x+z)/2
+          if (-y*log(0.5*exp(-1/y)+0.5)>rat){
+            x=y 
+          }else{
+            z=y
+          }
+          
+        }
+        a=-x*log(0.5*exp(-1/x)+0.5)
+        b=-z*log(0.5*exp(-1/z)+0.5)
+        if (a!=b){
+          y=z+(x-z)*(rat-b)/(a-b)
+          RT=k*(H-L)*y
+          return(RT)
+        } 
+        else{
+          RT=k*(H-L)*(x+z)/2 
+          return(RT)
+        }
+      }
+    }
+  }
+}
+
+RISKTOL(20,-10,2)
+
+
+UINV <- function(u,r,s){
+  #######################
+  # u: any amount of monetary income
+  # r: risk tolerance constant
+  # s: risk tolerance slope
+  # output: expected money which has an equivalent value to the provided utility given a risk tolerance
+  #######################
+  
+  if(missing(s) & r > 0 ){
+    ans <-  -r*log(-u)
+    return(ans)
+  }
+  else if (missing(s) & r < 0 ){
+    utl <- -u
+    ans <-  -r*log(-utl)
+    return(ans)
+  }
+  else if (s!=0 & s!=1){
+    utl <- log((s-1)*u)/(1-1/s)
+    ans <- (exp(utl)-r)/s
+    return(ans)
+  }
+  else if(s==1){
+    ans <- (exp(u)-r)/s
+    return(ans)
+  }
+  else{
+    print("Error")
+  }
+}
+
+# Certainty Equivalent if probs are discrete
+CEPR <- function(prize,proby,r,s){
+  
+  Util_Prize_Rt <- UTIL(prize,r,s)
+  EU <- as.vector(crossprod(Util_Prize_Rt,proby))
+  CE <- UINV(EU,r,s)
+  return(CE)
+}
+
+# Certainty Equivalent if utility is endogenous
+CE <- function(EMV,R,s){
+  b15 <- UTIL(EMV,R,s)
+  avgr <- mean(b15)
+  equiv<- UINV(avgr,R,s)
+  return(equiv)
+}
+
+# Other commonly used functions
+STDEVPR <- function(x,prob){
+  #######################
+  # x: vector of values
+  # prob: vector of probabilities
+  # output: returns standard deviation of profit
+  #######################
+  
+  meank<- as.vector(crossprod(x,prob))
+  d <- (x-c(meank))^2
+  stdevk <- as.vector(crossprod(d,prob)^0.5)
+  
+  return(stdevk)
+}
+
+# A simpler way to get the same results as the DISCRINV function  is to use the sample function in base R
+DISCRINV <- function(x,values,prob){
+  #######################
+  # x: randomly generated value between 0 and 1
+  # values: vector of values
+  # prob: vector of probabilities
+  # output: returns standard deviation of profit
+  #######################
+  
+  require(FSA)
+  
+  if(length(values) <3 ){
+    ifelse(x<0.5,return(values[1]),return(values[2]))
+  }
+  
+  precumsum <- c(pcumsum(prob),1)
+  
+  for (i in 1:(length(precumsum)-1)){
+    if (precumsum[i] <= x & x < precumsum[i+1]){
+      simulatedvalue <- K[i]
+    }
+  }
+  
+  return(simulatedvalue)
+  
+}
+
+# Standard Normal distribution with mean 0 and Standard Deviation 1
+NORM.S.DIST <- function(p,cp = T){
+  #######################
+  # p: value to evaluate
+  # cp: TRUE: Densitiy; FALSE: Cumulative Probability   
+  # output: returns standard deviation of profit
+  #######################
+  if(!is.logical(cp)){
+    stop('cp must be boolean value')
+  }
+  if(cp){
+    ans <- dnorm(p)
+    return(ans)
+  }else{
+    ans <- pnorm(p)
+    return(ans)
+  }
+}
+
+# 
+GENLINV <- function(prob1,quart1,quart2,quart3,lowest=NULL,highest=NULL){
+  
+  prob2 = ifelse(prob1>0.999999,0.999999,
+                 ifelse(prob1<0.000001,0.000001,prob1))
+  
+  norml = qnorm(prob2)/0.67449
+  
+  b = (quart3 - quart2)/(quart2-quart1)
+  
+  if(quart1>quart3 | quart1>quart2){
+    stop("Number Error quart1 > quart2|quart3")
+  }
+  
+  if(b==1){
+    GenAns = (quart3-quart2)*norml+quart2
+  }
+  else if(b>0){
+    GenAns = (quart3-quart2)*(b^norml-1)/(b-1)+quart2
+  }
+  else{
+    stop("Number Error")
+  }
+  if(!is.null(lowest)){
+    if(quart1<lowest|quart2<lowest|quart3<lowest){
+      stop("Number Error quart < lowest")
+    }
+    else if(GenAns < lowest){
+      GenAns = lowest
+    }
+  }
+  if(!is.null(highest)){
+    if(quart3>highest | quart1>highest | quart2>highest){
+      stop("Number Error quart > highest ")
+    }
+    else if(GenAns > highest){
+      GenAns = highest
+    }
+  }
+  return(GenAns)
+}
+
+# Certainty Equivalent given a normal distribution
+CE_Norm <- function(mu, std, crt) {
+  if (missing(std)|missing(crt)|missing(mu)) {
+    stop('Mean, Standard Deviation, or Risk Tolerance are missing')
+  }
+  ce = mu - 0.5*(std^2)/crt
+}
+
+# Risk Premium given a normal distribution
+RP_Norm <- function(std, crt, ce = NULL,mu = NULL) {
+  if (missing(std)|missing(crt)) {
+    stop('Standard Deviation and Risk Tolerance are required')
+  }
+  
+  if (is.null(ce)) {
+    rp = .05*(std^2)/crt
+    return(rp)
+  } 
+  
+  if (!is.null(mu)) {
+    rp = mu - ce
+    return(rp)
+  } else{
+    stop('Mean is required')
+  }
+}
+
+# qlnorm function which takes nonlog mean and standard deviations
+LNORMINV <- function(p, mean, sd) {
+  sd2 = log(1 + ((sd / mean) ^ 2))
+  lnorm = exp(qnorm(p,mean  = log(mean) - (0.5 * sd2) , sd = sd2^0.5))
+  return(lnorm)
+}
+
+# dlnorm function which takes nonlog mean and standard deviations
+LNORMINV.D <- function(x, mean, sd) {
+  sd2 = log(1 + ((sd / mean) ^ 2))
+  dlnorm = dlnorm(x,mean  = log(mean) - (0.5 * sd2) , sd = sd2^0.5)
+  return(dlnorm)
+}
+
+# qgamma which takes mean and standard deviations
+GAMINV <- function(p, mean, sd) {
+  gamma = qgamma(p, shape = (mean / sd) ^ 2, rate =  mean/(sd ^ 2))
+return(gamma)
+}
+
+# dgamma which takes mean and standard deviations
+GAMINV.D <- function(x, mean, sd) {
+  dgamma = dgamma(x, shape = (mean / sd) ^ 2, rate = mean/(sd ^ 2))
+return(dgamma)
+}
+
+# qbeta which takes mean and standard deviations
+BETINV <- function(p, mean, sd, lowerbound = NULL,  upperbound = NULL) {
+  u = 1
+  L = 0
+  
+  if (!is.null(lowerbound)) L = lowerbound
+  if (!is.null(upperbound)) u = upperbound
+  if (u <= L) stop('Upperbound smaller than Lowerbound')
+  
+  m = (mean - L) / (u - L)
+  s = sd / (u - L)
+  n = m * (1 - m) / (s ^ 2) - 1
+  
+  beta = L + (u - L) * qbeta(p, shape1 =  m * n, shape2 = (1 - m) * n)
+  
+  return(beta)
+}
+
+# dbeta which takes mean and standard deviations
+BETINV.D <- function(x, mean, sd, lowerbound = NULL,  upperbound = NULL) {
+  u = 1
+  L = 0
+  
+  if (!is.null(lowerbound)) L = lowerbound
+  if (!is.null(upperbound)) u = upperbound
+  if (u <= L) stop('Upperbound smaller than Lowerbound')
+  
+  m = (mean - L) / (u - L)
+  s = sd / (u - L)
+  n = m * (1 - m) / (s ^ 2) - 1
+  
+  beta = L + (u - L) * dbeta(x, shape1 =  m * n, shape2 = (1 - m) * n)
+
+  return(beta)
+}
+
+# Creates a matrix of products
+PRODS = function(x){
+  n = length(x)
+  result = matrix(nrow = n,ncol = n)
+
+  for (i in 1:n) {
+    for (k in 1:n) {
+      result[i,k] = x[i] * x[k]
+    }
+  }
+
+  colnames(result) = x
+  rownames(result) = x
+  return(result)
+}
+
+# Covariance between two vectors given a probability of outcomes
+COVARPR <- function(val1, val2, prob) {
+
+  c = NCOL(prob)
+  r = length(prob)
+
+  if (length(val1) != r || length(val2) != r) {stop('Length of vectors not equal')}
+  if (NCOL(val1) != c | NCOL(val2) != c) stop('Number of columns in vectors not equal')
+  if (sum(prob) != 1) stop('Prob does not add up to one')
+
+  sump = 0
+  mean1 = 0
+  mean2 = 0
+  prods = 0
+
+  if (c == 1) {
+    for (i in 1:r) {
+
+      p = prob[i]
+      sump = sump + p
+      mean1 = mean1 + val1[i] * p
+      mean2 = mean2 + val2[i] * p
+      prods = prods + val1[i] * val2[i] * p
+
+    }
+  }else{
+    for (i in 1:r) {
+      for (k in 1:c) {
+        p = prob[i,k]
+        sump = sump + p
+        mean1 = mean1 + val1[i, k] * p
+        mean2 = mean2 + val2[i, k] * p
+        prods = prods + val1[i, k] * val2[i, k] * p
+      }
+    }
+  }
+
+
+  results = (prods - (mean1 * mean2 / sump)) / sump
+  return(results)
+
+}
+
+# Pearson correlation between two vectors given a probability of outcomes
+
+CORRELPR <- function(val1, val2, prob){
+
+  results = COVARPR(val1, val2, prob) / ((COVARPR(val1, val1, prob) * COVARPR(val2, val2, prob)) ^ 0.5) 
+  return(results)
+
+}
+
+
+#Returns the matrix of correlation coeficients among the columns of the data range. If the data range has n columns, then MCORRELS should be entereed as an array formula in a square n-by-n range.
+
+MCORRELS <- function(dataRange) {
+  tryCatch({
+    r <- nrow(dataRange)
+    n <- ncol(dataRange)
+    x <- vector("list", n)
+    mc <- matrix(0, nrow = n, ncol = n)
+    ss <- matrix(0, nrow = n, ncol = n)
+    m <- numeric(n)
+    rr <- r
+    
+    for (i in 1:r) {
+      doit <- 0
+      
+      for (j in 1:n) {
+        ob <- dataRange[i, j]
+        doit <- doit + sum(!is.na(ob))
+        x[[j]] <- ob
+      }
+      
+      if (doit == n) {
+        for (j in 1:n) {
+          m[j] <- m[j] + x[[j]]
+          
+          for (k in 1:j) {
+            ss[j, k] <- ss[j, k] + x[[j]] * x[[k]]
+          }
+        }
+      } else {
+        rr <- rr - 1
+      }
+    }
+    
+    for (j in 1:n) {
+      ss[j, j] <- sqrt(ss[j, j] - m[j] * m[j] / rr)
+      mc[j, j] <- 1
+      
+      for (k in 1:(j - 1)) {
+        ss[j, k] <- ss[j, k] - m[j] * m[k] / rr
+        mc[j, k] <- ss[j, k] / (ss[j, j] * ss[k, k])
+        mc[k, j] <- mc[j, k]
+      }
+    }
+    
+    return(mc)
+  }, error = function(e) {
+    MCORRELS <- NA
+  })
+}
+
+# Usage example:
+# result <- MCORRELS(dataRange)
+# Replace dataRange with appropriate values.
+
+MIDRAND <- function(correlation, givenCoValue) {
+  tryCatch({
+    if (abs(correlation) > 1) stop("Absolute value of correlation must be less than or equal to 1")
+    
+    MIDRAND <- pnorm(correlation * qnorm(givenCoValue))
+  }, error = function(e) {
+    MIDRAND <- NA
+  })
+}
+
+SHUFFLE <- function(n, RANDsource = NULL) {
+  tryCatch({
+    i <- 0
+    r <- 0
+    k <- 0
+    eps <- 0
+    d <- integer(n)
+    sh <- matrix(0, nrow = 1, ncol = n)
+    
+    if (is.null(RANDsource)) {
+      r <- runif(1)
+    } else {
+      r <- RANDsource
+    }
+    
+    eps <- (10^-10) * r
+    
+    for (i in 1:n) {
+      r <- (n + 1 - i) * (r + eps)
+      k <- floor(r)
+      r <- r - k
+      
+      if (i + k > n) k <- 0
+      
+      sh[1, i] <- i + k + d[i + k]
+      d[i + k] <- d[i] - k
+    }
+    
+    return(sh)
+  }, error = function(e) {
+    SHUFFLE <- NA
+  })
+}
+
+# Usage example:
+# result1 <- MIDRAND(correlation, givenCoValue)
+# Replace correlation and givenCoValue with appropriate values.
+
+# result2 <- SHUFFLE(n, RANDsource)
+# Replace n and RANDsource with appropriate values.
+
+
+LAPLAINV <- function(probability, mean, stdevn) {
+  tryCatch({
+    d <- stdevn / sqrt(2)
+    r <- probability - 0.5
+    
+    if (r < 0) {
+      d <- -d
+      r <- -r
+    }
+    
+    LAPLAINV <- mean - d * log(1 - 2 * r)
+  }, error = function(e) {
+    LAPLAINV <- NA
+  })
+}
+
+# Usage example:
+# result <- LAPLAINV(probability, mean, stdevn)
+# Replace probability, mean, and stdevn with appropriate values.
+
+
+XTREMINV <- function(probability, mean, stdevn) {
+  tryCatch({
+    if (stdevn < 0) probability <- 1 - probability
+    
+    XTREMINV <- 0.4500535 + 0.7796968 * log(-log(probability))
+    XTREMINV <- mean - stdevn * XTREMINV
+  }, error = function(e) {
+    XTREMINV <- NA
+  })
+}
+
+# Usage example:
+# result <- XTREMINV(probability, mean, stdevn)
+# Replace probability, mean, and stdevn with appropriate values.
+
+POISINV <- function(probability, mean) {
+  tryCatch({
+    if (probability > 0.999999) probability <- 0.999999
+    
+    n <- mean - 5 * sqrt(mean) - 1
+    
+    if (n > 100) {
+      v <- exp(n - mean - n * log(n / mean)) / (pi * (2 * n + 1 / 3)) ^ 0.5
+      cumv <- v * mean / (mean - n)
+    } else {
+      n <- 0
+      v <- exp(-mean)
+      cumv <- v
+    }
+    
+    if (v == 0) stop("Error: Unable to calculate POISINV")
+    
+    while (probability > cumv) {
+      n <- n + 1
+      v <- v * mean / n
+      cumv <- cumv + v
+    }
+    
+    POISINV <- n
+  }, error = function(e) {
+    POISINV <- NA
+  })
+}
+
+# Usage example:
+# result <- POISINV(probability, mean)
+# Replace probability and mean with appropriate values.
+
+TRIANINV <- function(probability, lowerbound, mostlikely, upperbound) {
+  tryCatch({
+    if (probability > 1 || probability < 0) stop("Error: Invalid probability")
+    
+    if (lowerbound >= upperbound) stop("Error: Invalid lowerbound and upperbound")
+    
+    x <- (mostlikely - lowerbound) / (upperbound - lowerbound)
+    
+    if (x > 1 || x < 0) stop("Error: Invalid mostlikely value")
+    
+    if (probability <= x) {
+      TRIANINV <- lowerbound + (upperbound - lowerbound) * ((probability * x) ^ 0.5)
+    } else {
+      TRIANINV <- upperbound - (upperbound - lowerbound) * (((1 - probability) * (1 - x)) ^ 0.5)
+    }
+  }, error = function(e) {
+    TRIANINV <- NA
+  })
+}
+
+EXPOINV <- function(probability, mean) {
+  tryCatch({
+    EXPOINV <- -mean * log(1 - probability)
+  }, error = function(e) {
+    EXPOINV <- NA
+  })
+}
+
+# Usage examples:
+# result <- TRIANINV(probability, lowerbound, mostlikely, upperbound)
+# Replace probability, lowerbound, mostlikely, and upperbound with appropriate values.
+
+# result <- EXPOINV(probability, mean)
+# Replace probability and mean with appropriate values.
+
+BINOMINV <- function(probability, n, p) {
+  tryCatch({
+    rev <- 0
+    if (p > 0.5) {
+      rev <- 1
+      probability <- 1 - probability
+      p <- 1 - p
+    }
+    
+    if (n <= 0) {
+      BINOMINV <- 0
+      return(BINOMINV)
+    }
+    
+    if (p < 0) p <- 0
+    
+    x <- 0
+    ptpr <- (1 - p) ^ n
+    
+    if (ptpr == 0) stop("Error: Invalid parameters")
+    
+    cumv <- ptpr
+    
+    while (probability > cumv && x < n) {
+      x <- x + 1
+      ptpr <- ptpr * (n + 1 - x) * p / (x * (1 - p))
+      cumv <- cumv + ptpr
+    }
+    
+    BINOMINV <- (1 - rev) * x + rev * (n - x)
+  }, error = function(e) {
+    BINOMINV <- NA
+  })
+}
+
+ARGMAX <- function(labels, values, testCells = NULL, criterion = NULL) {
+  tryCatch({
+    r <- nrow(labels)
+    c <- ncol(labels)
+    
+    if (nrow(values) != r || ncol(values) != c) stop("Error: Invalid dimensions of labels and values")
+    
+    if (is.null(testCells)) {
+      x <- NULL
+      
+      for (i in 1:r) {
+        for (j in 1:c) {
+          y <- values[i, j]
+          if (is.null(x) || y > x) {
+            x <- y
+            ARGMAX <- labels[i, j]
+          }
+        }
+      }
+      
+      return(ARGMAX)
+    }
+    
+    if (nrow(testCells) != r || ncol(testCells) != c || is.null(criterion)) stop("Error: Invalid dimensions of testCells or missing criterion")
+    
+    crit <- criterion
+    x <- NULL
+    
+    for (i in 1:r) {
+      for (j in 1:c) {
+        if (sum(testCells[i, j] == crit) == 1) {
+          y <- values[i, j]
+          if (is.null(x) || y > x) {
+            x <- y
+            ARGMAX <- labels[i, j]
+          }
+        }
+      }
+    }
+    
+    if (is.null(x)) ARGMAX <- NA
+  }, error = function(e) {
+    ARGMAX <- NA
+  })
+}
+
+# Usage examples:
+# result <- BINOMINV(probability, n, p)
+# Replace probability, n, and p with appropriate values.
+
+# result <- ARGMAX(labels, values, testCells, criterion)
+# Replace labels, values, testCells, and criterion with appropriate values.
+
+
+LGTINV <- function(p) {
+  tryCatch({
+    n <- 0
+    
+    if (is.data.frame(p) || is.matrix(p)) {
+      n <- ncol(p)
+    } else if (is.array(p)) {
+      n <- dim(p)[2]
+    } else {
+      n <- 1
+    }
+    
+    y <- matrix(0, nrow = 1, ncol = n)
+    c <- exp(-50)
+    yy <- p[1, n]
+    
+    if (n == 1) {
+      yy <- 1 - yy
+    }
+    
+    if (yy < c && yy >= 0) {
+      yy <- c
+    }
+    
+    for (j in 1:n) {
+      y[1, j] <- p[1, j]
+      
+      if (y[1, j] < c && y[1, j] >= 0) {
+        y[1, j] <- c
+      }
+      
+      y[1, j] <- log(y[1, j] / yy)
+    }
+    
+    LGTINV <- y
+  }, error = function(e) {
+    LGTINV <- NA
+  })
+}
+
+LGT <- function(x) {
+  tryCatch({
+    n <- 0
+    
+    if (is.data.frame(x) || is.matrix(x)) {
+      n <- ncol(x)
+    } else if (is.array(x)) {
+      n <- dim(x)[2]
+    } else {
+      n <- 1
+    }
+    
+    y <- matrix(0, nrow = 1, ncol = n)
+    yy <- 0
+    
+    for (j in 1:n) {
+      y[1, j] <- exp(x[1, j])
+      yy <- yy + y[1, j]
+    }
+    
+    if (n == 1) {
+      yy <- yy + 1
+    }
+    
+    for (j in 1:n) {
+      y[1, j] <- y[1, j] / yy
+    }
+    
+    LGT <- y
+  }, error = function(e) {
+    LGT <- NA
+  })
+}
+
+# Usage examples:
+# result <- LGTINV(p)
+# Replace p with an appropriate input.
+
+# result <- LGT(x)
+# Replace x with an appropriate input.
+
+
+MSQRT <- function(squareArray) {
+  tryCatch({
+    n <- 0
+    if (is.data.frame(squareArray) || is.matrix(squareArray)) {
+      n <- ncol(squareArray)
+      if (n != nrow(squareArray)) {
+        stop("Input array must be a square matrix")
+      }
+    } else if (is.array(squareArray)) {
+      n <- dim(squareArray)[1]
+      if (n != dim(squareArray)[2]) {
+        stop("Input array must be a square matrix")
+      }
+    } else {
+      n <- 1
+    }
+    
+    x <- matrix(0, nrow = n, ncol = n)
+    
+    for (j in n:1) {
+      x[j, j] <- squareArray[j, j]
+      
+      for (k in n:(j + 1)) {
+        x[k, j] <- squareArray[k, j]
+        x[j, k] <- 0
+        
+        for (i in n:(k + 1)) {
+          x[k, j] <- x[k, j] - x[i, j] * x[i, k]
+        }
+        
+        if (x[k, j] != 0) {
+          x[k, j] <- x[k, j] / x[k, k]
+        }
+        
+        x[j, j] <- x[j, j] - (x[k, j] ^ 2)
+      }
+      
+      x[j, j] <- sqrt(x[j, j])
+    }
+    
+    MSQRT <- x
+  }, error = function(e) {
+    MSQRT <- NA
+  })
+}
+
+# Usage example:
+# result <- MSQRT(squareArray)
+# Replace squareArray with an appropriate input.
+
+DIRICH <- function(alphaArray, RANDsource = NULL) {
+  tryCatch({
+    m <- nrow(alphaArray)
+    n <- ncol(alphaArray)
+    x <- matrix(0, nrow = m, ncol = n)
+    y <- 0
+    miss <- is.null(RANDsource)
+    
+    if (!miss) {
+      if (nrow(RANDsource) != m || ncol(RANDsource) != n) {
+        stop("RANDsource dimensions do not match alphaArray")
+      }
+    }
+    
+    for (i in 1:m) {
+      for (j in 1:n) {
+        if (miss) {
+          rp <- runif(1)
+        } else {
+          rp <- RANDsource[i, j]
+        }
+        
+        z <- alphaArray[i, j]
+        
+        if (z > 340) {
+          x[i, j] <- qnorm(rp, mean = z, sd = sqrt(z))
+        } else {
+          x[i, j] <- qgamma(rp, shape = z, rate = 1)
+        }
+        
+        y <- y + x[i, j]
+      }
+    }
+    
+    for (i in 1:m) {
+      for (j in 1:n) {
+        x[i, j] <- x[i, j] / y
+      }
+    }
+    
+    DIRICH <- x
+  }, error = function(e) {
+    DIRICH <- NA
+  })
+}
+
+DIRALPHA <- function(dataRange) {
+  tryCatch({
+    r <- nrow(dataRange)
+    c <- ncol(dataRange)
+    x <- numeric(c)
+    y <- 1
+    
+    for (j in 1:c) {
+      x[j] <- 1
+      
+      for (i in 1:r) {
+        x[j] <- x[j] * dataRange[i, j]
+      }
+      
+      x[j] <- x[j] ^ (1 / r)
+      y <- y - x[j]
+    }
+    
+    for (j in 1:c) {
+      x[j] <- 0.5 * ((c - 1) * x[j] + y) / y
+    }
+    
+    DIRALPHA <- x
+  }, error = function(e) {
+    DIRALPHA <- NA
+  })
+}
+
+# Usage examples:
+# result <- DIRICH(alphaArray, RANDsource)
+# Replace alphaArray and RANDsource with appropriate inputs.
+
+# result <- DIRALPHA(dataRange)
+# Replace dataRange with an appropriate input.
+
+
+NORMIZE <- function(datacolumn) {
+  tryCatch({
+    n <- length(datacolumn)
+    m <- 0
+    src <- integer(n)
+    rnk <- integer(n)
+    data <- numeric(n)
+    temps <- integer(n)
+    r <- vector("list", length = n)
+    
+    if (nrow(as.data.frame(datacolumn)) < n || ncol(as.data.frame(datacolumn)) > 1) {
+      stop(paste("NORMIZE array requires", n, "rows x 1 column."))
+    }
+    
+    for (i in 1:n) {
+      if (length(unique(datacolumn[[i]])) == 1) {
+        m <- m + 1
+        src[m] <- i
+        data[i] <- datacolumn[[i]]
+      } else {
+        r[[i]] <- "..."
+      }
+    }
+    
+    QRANK(data, src, rnk, 1, m, temps)
+    
+    for (i in 1:m) {
+      r[src[i]] <- qnorm(rnk[i] / (2 * m))
+    }
+    
+    NORMIZE <- r
+  }, error = function(e) {
+    NORMIZE <- NA
+  })
+}
+
+# Usage example:
+# result <- NORMIZE(datacolumn)
+# Replace datacolumn with an appropriate input.
+
